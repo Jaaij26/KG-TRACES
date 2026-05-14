@@ -13,7 +13,6 @@ def normalize(s: str) -> str:
     exclude = set(string.punctuation)
     s = "".join(char for char in s if char not in exclude)
     s = re.sub(r"\b(a|an|the)\b", " ", s)
-    s = re.sub(r"\b()\b", " ", s)
     s = " ".join(s.split())
     return s
 
@@ -47,24 +46,32 @@ def eval_hit(prediction, answer):
 def eval_f1(prediction, answer):
     if len(prediction) == 0:
         return 0, 0, 0
+
     matched = 0
     prediction_str = " ".join(prediction)
+
     for a in answer:
         if match(prediction_str, a):
             matched += 1
+
     precision = matched / len(prediction)
     recall = matched / len(answer)
+
     if precision + recall == 0:
         return 0, precision, recall
+
     return 2 * precision * recall / (precision + recall), precision, recall
 
 
 def extract_topk_prediction(prediction, k=-1):
     results = {}
+
     for p in prediction:
         results[p] = results.get(p, 0) + 1
+
     if k > len(results) or k < 0:
         k = len(results)
+
     results = sorted(results.items(), key=lambda x: x[1], reverse=True)
     return [r[0] for r in results[:k]]
 
@@ -72,11 +79,14 @@ def extract_topk_prediction(prediction, k=-1):
 def evaluation_hit_k(predictions: list[str], answers: list[str], k: int):
     if k <= 0:
         return 0
+
     topk_predictions = extract_topk_prediction(predictions, k)
+
     for a in answers:
         for p in topk_predictions:
             if match(p, a):
                 return 1
+
     return 0
 
 
@@ -85,6 +95,7 @@ def eval_mrr(predictions: list[str], answers: list[str]) -> float:
         for a in answers:
             if match(p, a):
                 return 1.0 / (i + 1)
+
     return 0.0
 
 
@@ -102,6 +113,7 @@ def extract_answer(raw_prediction: str, skip_false_parse: bool = False) -> list[
         if skip_false_parse:
             return []
         predictions = raw_prediction.split("\n")
+
     return predictions
 
 
@@ -114,24 +126,42 @@ def _read_latency(data):
     ]:
         if key in data and data[key] is not None:
             return float(data[key])
+
     return None
 
 
-def eval_result(predict_file, cal_f1=True, topk=-1, is_tuned=False, skip_false_parse=False):
+def eval_result(
+    predict_file,
+    cal_f1=True,
+    topk=-1,
+    is_tuned=False,
+    skip_false_parse=False,
+):
     if not predict_file.endswith("predictions.jsonl"):
         predict_file = os.path.join(predict_file, "predictions.jsonl")
 
-    eval_name = f"detailed_eval_result_top_{topk}.jsonl" if topk > 0 else "detailed_eval_result.jsonl"
+    eval_name = (
+        f"detailed_eval_result_top_{topk}.jsonl"
+        if topk > 0
+        else "detailed_eval_result.jsonl"
+    )
     detailed_eval_file = predict_file.replace("predictions.jsonl", eval_name)
-
     summary_txt = predict_file.replace("predictions.jsonl", "detailed_eval_results.txt")
     short_txt = predict_file.replace(
         "predictions.jsonl",
         f"eval_result_top_{topk}.txt" if topk > 0 else "eval_result.txt",
     )
 
-    acc_list, hit_list, f1_list, precision_list, recall_list, mrr_list = [], [], [], [], [], []
+    acc_list = []
+    hit_list = []
+    f1_list = []
+    precision_list = []
+    recall_list = []
+    mrr_list = []
     latency_list = []
+    generation_time_list = []
+    tokens_per_second_list = []
+    end_to_end_latency_list = []
 
     with open(predict_file, "r") as f, open(detailed_eval_file, "w") as f2:
         for line in f:
@@ -183,6 +213,15 @@ def eval_result(predict_file, cal_f1=True, topk=-1, is_tuned=False, skip_false_p
             recall_list.append(recall_score)
             mrr_list.append(mrr)
 
+            if data.get("generation_time") is not None:
+                generation_time_list.append(float(data["generation_time"]))
+
+            if data.get("tokens_per_second") is not None:
+                tokens_per_second_list.append(float(data["tokens_per_second"]))
+
+            if data.get("end_to_end_latency") is not None:
+                end_to_end_latency_list.append(float(data["end_to_end_latency"]))
+
             f2.write(
                 json.dumps(
                     {
@@ -196,12 +235,31 @@ def eval_result(predict_file, cal_f1=True, topk=-1, is_tuned=False, skip_false_p
                         "recall": recall_score,
                         "MRR": mrr,
                         "latency_sec": latency_value,
+                        "generation_time": data.get("generation_time"),
+                        "tokens_per_second": data.get("tokens_per_second"),
+                        "end_to_end_latency": data.get("end_to_end_latency"),
                     }
                 )
                 + "\n"
             )
 
     if len(f1_list) > 0:
+        average_generation_time = (
+            sum(generation_time_list) / len(generation_time_list)
+            if generation_time_list
+            else 0
+        )
+        average_tokens_per_second = (
+            sum(tokens_per_second_list) / len(tokens_per_second_list)
+            if tokens_per_second_list
+            else 0
+        )
+        average_end_to_end_latency = (
+            sum(end_to_end_latency_list) / len(end_to_end_latency_list)
+            if end_to_end_latency_list
+            else 0
+        )
+
         result_str = (
             f"Accuracy: {sum(acc_list) * 100 / len(acc_list):.2f}\n"
             f"Hit: {sum(hit_list) * 100 / len(hit_list):.2f}\n"
@@ -209,12 +267,12 @@ def eval_result(predict_file, cal_f1=True, topk=-1, is_tuned=False, skip_false_p
             f"Precision: {sum(precision_list) * 100 / len(precision_list):.2f}\n"
             f"Recall: {sum(recall_list) * 100 / len(recall_list):.2f}\n"
             f"MRR: {sum(mrr_list) * 100 / len(mrr_list):.2f}\n"
+            f"Average generation time: {average_generation_time:.4f}s\n"
+            f"Average Tokens per second: {average_tokens_per_second:.2f}\n"
+            f"Average end to end latency: {average_end_to_end_latency:.4f}s\n"
         )
     else:
-        result_str = (
-            f"Accuracy: {sum(acc_list) * 100 / len(acc_list):.2f}\n"
-            f"Hit: {sum(hit_list) * 100 / len(hit_list):.2f}\n"
-        )
+        result_str = "No valid predictions to evaluate.\n"
 
     if latency_list:
         result_str += (
