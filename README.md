@@ -312,8 +312,8 @@ python bridge.py --port 8765
 In a **separate terminal on your laptop**, forward port 8765:
 
 ```bash
-ssh -L 8765:localhost:8765 -t 018228028@coe-hpc1.sjsu.edu \
-    "ssh -L 8765:localhost:8765 coe-hpc3"
+ssh -L 8765:localhost:8765 -t <>\
+    "<>"
 ```
 
 Keep this terminal open while using the UI. The bridge status dot in the top-right corner of the UI turns green when connected.
@@ -372,7 +372,7 @@ start files/kg_traces_ui_slurm.html
 |---|---|---|
 | `--early_exit` | `true` | Stop-string early exit. Halts decoding at `</endanswer>` boundary. Zero effect on Hits@k |
 | `--explain` | off | Generate full explanation after answer (disables early exit automatically) |
-| `--conf_threshold` | `-inf` | Answer-only mean log-prob below which `low_confidence: true` is written to output. **Never alters prediction or affects Hits@k** |
+| `--conf_threshold` | `-inf` | Answer-only mean log-prob below which `low_confidence: true` is written to output. **Never alters prediction or affects Hit@k** |
 | `--include_reasoning` | off | Use `QUESTION_WITH_REASONING` prompt template. Default uses `QUESTION_ANSWER_ONLY` |
 
 ### `ui_inference.py` (called internally by bridge)
